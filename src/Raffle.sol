@@ -8,7 +8,11 @@ pragma solidity ^0.8.19;
  *@notice This contrcat is for creating a simple raffle
  *@dev Implements Chainlink VRFv2.5
  **/
+
 contract Raffle {
+    /**Custom Errors */
+    error SendMoreToEnterRaffle();
+
     //connot change this /cheap for gas
     uint256 private immutable i_entranceFee;
 
@@ -17,8 +21,11 @@ contract Raffle {
     }
 
     function enterRaffle() public payable {
-        //having string here is not very gas efficient 
-        require(msg.value>= i_entranceFee,"Not enough ETH sent");
+        //having string here is not very gas efficient
+        // require(msg.value>= i_entranceFee,"Not enough ETH sent");
+        if (msg.value < i_entranceFee) {
+            revert SendMoreToEnterRaffle();
+        }
     }
 
     function pickWinner() public {}
