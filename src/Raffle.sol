@@ -15,10 +15,11 @@ contract Raffle is VRFConsumerBaseV2Plus {
     error Raffle__SendMoreToEnterRaffle();
     error Raffle__TransferFailed();
     error Raffle__StateNotOpen();
+    error Raffle__UpKeepNotNeeded(uint256 balance , uint256 playersLength,uint256 raffleState);
 
     /** type declaration */
     enum RaffleState {
-        OPEN, //0
+        OPEN, //03
         CALCULATING //1
     }
 
@@ -80,7 +81,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
 
 //this funtion will run again and again till the time is up for drawing up winner
 
-    function checkUpkeep(bytes calldata /*checkData*/)
+    function checkUpkeep(bytes memory /*checkData*/)
     public
     view
     returns(bool upkeepNeeded, bytes memory /*performData */)
@@ -101,9 +102,10 @@ contract Raffle is VRFConsumerBaseV2Plus {
 
     function performUpkeep() external {
         //check if enough time has passed
-        if ((block.timestamp - s_lastTimeStamp) < i_interval) {
-            revert();
-        }
+      (bool upkeepNeeded,)=checkUpkeep("");
+      if(!upkeepNeeded){
+        revert Raffle__UpKeepNotNeeded(address(this).balance,s_players.length,uint256(s_raffleState));
+      }
 
         s_raffleState = RaffleState.CALCULATING;
 
