@@ -13,6 +13,14 @@ pragma solidity ^0.8.19;
 contract Raffle is VRFConsumerBaseV2Plus {
     /**Custom Errors */
     error Raffle__SendMoreToEnterRaffle();
+    error Raffle__TransferFailed();
+    error Raffle__StateNotOpen();
+
+    /** type declaration */
+    enum RaffleState {
+        OPEN, //0
+        CALCULATING //1
+    }
 
     //connot change this /cheap for gas
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
@@ -26,10 +34,13 @@ contract Raffle is VRFConsumerBaseV2Plus {
     //data structure to store all players enters the lottry contest
     address payable[] private s_players;
     uint256 private s_lastTimeStamp;
+    address private s_recentWinner;
+    RaffleState private s_raffleState;
 
     /**Events */
 
     event RaffleEntered(address indexed player);
+    event WinnerPicked(address indexed winner);
 
     constructor(
         uint256 entranceFee,
@@ -41,9 +52,12 @@ contract Raffle is VRFConsumerBaseV2Plus {
     ) VRFConsumerBaseV2Plus(vrfCoordinator) {
         i_entranceFee = entranceFee;
         i_interval = interval;
-        s_lastTimeStamp = block.timestamp;
+        i_keyHash = gasLane;
         i_subscriptionId = subscriptionId;
         i_callbackgasLimit = callbackgasLimit;
+
+        s_lastTimeStamp = block.timestamp;
+        s_raffleState = RaffleState.OPEN;
     }
 
     function enterRaffle() external payable {
@@ -52,6 +66,11 @@ contract Raffle is VRFConsumerBaseV2Plus {
         if (msg.value < i_entranceFee) {
             revert Raffle__SendMoreToEnterRaffle();
         }
+
+        if (s_raffleState != RaffleState.OPEN) {
+            revert Raffle__StateNotOpen();
+        }
+
         s_players.push(payable(msg.sender));
 
         // 1. Makes migration easier
@@ -68,6 +87,9 @@ contract Raffle is VRFConsumerBaseV2Plus {
         if ((block.timestamp - s_lastTimeStamp) < i_interval) {
             revert();
         }
+
+        s_raffleState = RaffleState.CALCULATING;
+
         //get our random number from chainlink
         //Two step method
         // 1.Request Random number generator
@@ -81,9 +103,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
                 callbackGasLimit: i_callbackgasLimit,
                 numWords: NUM_WORDS,
                 extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({
-                        nativePayment: true
-                    })
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
                 )
             })
         );
@@ -92,7 +112,24 @@ contract Raffle is VRFConsumerBaseV2Plus {
     function fulfillRandomWords(
         uint256 requestId,
         uint256[] calldata randomWords
-    ) internal virtual override {}
+    ) internal virtual override {
+        //s_players =10;
+        // rng= 12;
+        // 12%10 =2 <-
+        //44343434334334343434
+        uint256 indexOfWinner = randomWords[0] % s_players.length;
+        address payable recentWinner = s_players[indexOfWinner];
+        s_recentWinner = recentWinner;
+        s_raffleState = RaffleState.OPEN;
+        s_players = new address payable[](0);
+        s_lastTimeStamp = block.timestamp;
+        emit WinnerPicked(s_recentWinner);
+
+        (bool success,) = recentWinner.call{value: address(this).balance}("");
+        if (!success) {
+            revert Raffle__TransferFailed();
+        }
+    }
 
     /** Getter functions  */
     function getEntranceFee() external view returns (uint256) {
